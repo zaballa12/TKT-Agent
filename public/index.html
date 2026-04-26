@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agente de Tickets</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel composer">
+        <div>
+          <p class="eyebrow">Analise assistida</p>
+          <h1>Agente de Tickets</h1>
+          <p class="intro">Cole um ticket para gerar uma analise tecnica com contexto do repositorio.</p>
+        </div>
+
+        <form id="ticket-form" class="ticket-form">
+          <label for="ticket">Ticket</label>
+          <textarea id="ticket" name="ticket" rows="9" placeholder="Descreva o problema, duvida ou melhoria..."></textarea>
+          <div class="actions">
+            <button id="submit-button" type="submit">Analisar ticket</button>
+            <span id="status" role="status"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="section-title">
+          <h2>Resultado</h2>
+          <button id="refresh-button" type="button">Atualizar lista</button>
+        </div>
+        <div id="result" class="empty">Nenhum ticket analisado nesta sessao.</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,5 +1,10 @@
 node_modules/
-  dist/
-  build/
-  .env
-  .DS_Store
+dist/
+build/
+.env
+.DS_Store
+.venv/
+.tmp/
+.python_packages/
+__pycache__/
+*.pyc
