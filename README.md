@@ -18,6 +18,8 @@ Crie um arquivo `.env` na raiz:
 ```env
 GEMINI_API_KEY=sua_chave_gemini
 GEMINI_MODEL=gemini-2.5-flash-lite
+MAX_ANALYSIS_ROUNDS=4
+CONFIDENCE_THRESHOLD=80
 MAX_CONTEXT_FILES=6
 MAX_FILE_CHARS=12000
 
@@ -32,8 +34,9 @@ O projeto aceita `GITHUB_TOKEN` ou `GITHUB_PERSONAL_ACCESS_TOKEN`.
 ## Consumo de requests
 
 O backend reduz chamadas ao Gemini buscando primeiro o contexto no repositorio via MCP
-e depois enviando os arquivos mais relevantes em uma unica requisicao ao modelo.
-Isso ajuda quando o gargalo e RPM/RPD, nao TPM.
+e depois enviando os arquivos mais relevantes em requisicoes iterativas com contexto acumulado.
+O loop para quando bate o limite configurado de rodadas ou quando a confianca atinge o
+limiar desejado. Isso ajuda quando o gargalo e RPM/RPD, nao TPM.
 
 ## Rodando
 

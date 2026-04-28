@@ -1,3 +1,4 @@
+# Importa o arquivo bootstrap que carrega .env
 import bootstrap  # noqa: F401
 
 import asyncio
@@ -6,21 +7,26 @@ import os
 import re
 from typing import Any, Callable, Awaitable
 
+# Importa o SDK do Gemini
 from google import genai
 from google.genai import types
 
 
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite"
-MAX_TOOL_ROUNDS = int(os.getenv("GEMINI_MAX_TOOL_ROUNDS") or "8")
-MAX_CONTEXT_FILES = int(os.getenv("MAX_CONTEXT_FILES") or "6")
-MAX_FILE_CHARS = int(os.getenv("MAX_FILE_CHARS") or "12000")
+MAX_TOOL_ROUNDS = int(os.getenv("GEMINI_MAX_TOOL_ROUNDS"))
+MAX_ANALYSIS_ROUNDS = int(os.getenv("MAX_ANALYSIS_ROUNDS") or os.getenv("GEMINI_MAX_TOOL_ROUNDS"))
+CONFIDENCE_THRESHOLD = int(os.getenv("CONFIDENCE_THRESHOLD"))
+MAX_CONTEXT_FILES = int(os.getenv("MAX_CONTEXT_FILES"))
+MAX_FILE_CHARS = int(os.getenv("MAX_FILE_CHARS"))
+
+# Variável global para reutilizar o cliente Gemini
 _gemini_client: genai.Client | None = None
 
-
+# Verifica se existe configuração do Gemini
 def has_gemini_config() -> bool:
     return bool(os.getenv("GEMINI_API_KEY"))
 
-
+# Cria ou retorna o cliente Gemini reutilizando a instância global
 def get_gemini_client() -> genai.Client:
     global _gemini_client
     if _gemini_client is None:
@@ -47,7 +53,8 @@ def detect_problem_type(normalized_ticket: str) -> str:
 
     return "improvement"
 
-
+# Remove duplicados e termos vazios, preservando a ordem original
+# Basicamente serve para limpar e organizar os termos extraídos do ticket antes de construir as queries de busca no código
 def unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -62,7 +69,7 @@ def unique_preserve_order(values: list[str]) -> list[str]:
         result.append(normalized)
     return result
 
-
+# Função que recebe o texto do ticket e retorna uma lista de palavras-chave.
 def extract_ticket_keywords(ticket: str) -> list[str]:
     words = re.findall(r"[A-Za-zÀ-ÿ0-9_]{3,}", ticket.lower())
     stopwords = {
@@ -89,7 +96,7 @@ def extract_ticket_keywords(ticket: str) -> list[str]:
     keywords = [word for word in words if word not in stopwords]
     return unique_preserve_order(keywords)[:8]
 
-
+# Função que constrói uma lista de queries de busca no código a partir do texto do ticket, usando as palavras-chave extraídas e algumas variações.
 def build_ticket_driven_queries(ticket: str) -> list[str]:
     keywords = extract_ticket_keywords(ticket)
     phrases: list[str] = []
@@ -157,7 +164,7 @@ def build_search_plan(ticket: str, normalized_ticket: str) -> dict[str, Any]:
         "suspected_areas": ["support triage"],
     }
 
-
+# Função que constrói um resumo legível das observações coletadas durante a execução das ferramentas, para ajudar o modelo a entender o que foi encontrado no código e nas buscas.
 def build_observation_summary(observations: list[dict[str, Any]]) -> str:
     if not observations:
         return "No tool observations were collected."
@@ -197,7 +204,7 @@ def fallback_analyze_ticket(ticket: str) -> dict[str, Any]:
 def plan_ticket_locally(ticket: str) -> dict[str, Any]:
     return fallback_analyze_ticket(ticket)
 
-
+# 
 def fallback_analyze_with_code(
     ticket_analysis: dict[str, Any],
     code_context: list[dict[str, Any]],
@@ -277,8 +284,12 @@ def fallback_analyze_with_code(
             "evidence_files": file_paths,
             "repo_evidence_found": repo_evidence_found,
             "confidence": confidence,
+            "confidence_score": 85 if repo_evidence_found else 35,
             "complexity": "medium" if len(file_paths) >= 3 else "low",
             "recommended_action": recommended_action,
+            "needs_more_context": not repo_evidence_found,
+            "additional_search_queries": [],
+            "prioritized_files": [],
             "observation_summary": build_observation_summary(observations),
         },
     }
@@ -439,7 +450,11 @@ def build_final_response_schema() -> dict[str, Any]:
             "evidence_files": {"type": "array", "items": {"type": "string"}},
             "repo_evidence_found": {"type": "boolean"},
             "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+            "confidence_score": {"type": "integer", "minimum": 0, "maximum": 100},
             "complexity": {"type": "string", "enum": ["low", "medium", "high"]},
+            "needs_more_context": {"type": "boolean"},
+            "additional_search_queries": {"type": "array", "items": {"type": "string"}},
+            "prioritized_files": {"type": "array", "items": {"type": "string"}},
             "recommended_action": {
                 "type": "string",
                 "enum": [
@@ -465,7 +480,11 @@ def build_final_response_schema() -> dict[str, Any]:
             "evidence_files",
             "repo_evidence_found",
             "confidence",
+            "confidence_score",
             "complexity",
+            "needs_more_context",
+            "additional_search_queries",
+            "prioritized_files",
             "recommended_action",
         ],
     }
@@ -477,10 +496,14 @@ def build_single_pass_prompt(
     ticket_analysis: dict[str, Any],
     code_context: list[dict[str, Any]],
     observations: list[dict[str, Any]],
+    round_index: int,
+    max_rounds: int,
 ) -> str:
     return "\n\n".join(
         [
             f"Repository: {repository['owner']}/{repository['repo']}{f' at ref {repository['ref']}' if repository.get('ref') else ''}",
+            f"Analysis round: {round_index} of {max_rounds}",
+            f"Target confidence threshold: {CONFIDENCE_THRESHOLD}",
             f"Ticket:\n{ticket}",
             f"Initial local classification:\n{ticket_analysis}",
             f"Tool observations:\n{build_observation_summary(observations)}",
@@ -490,6 +513,11 @@ def build_single_pass_prompt(
                 "- Use only the repository evidence provided.\n"
                 "- If evidence is insufficient, say so explicitly.\n"
                 "- For question tickets, keep dev_activity empty unless code change is clearly required.\n"
+                "- Set confidence_score from 0 to 100 based on repository evidence quality.\n"
+                "- If confidence_score is below the threshold and more repository inspection may help, set needs_more_context=true.\n"
+                "- When needs_more_context=true, suggest focused additional_search_queries and prioritized_files.\n"
+                "- Prefer targeted Portuguese and English code search terms when suggesting additional_search_queries.\n"
+                "- If this is the final allowed round, answer with the best evidence available and set needs_more_context=false.\n"
                 "- Return valid JSON only."
             ),
         ]
@@ -513,6 +541,8 @@ async def run_gemini_single_pass(
     repository: dict[str, Any],
     ticket_analysis: dict[str, Any],
     fallback_context: dict[str, Any],
+    round_index: int,
+    max_rounds: int,
 ) -> dict[str, Any]:
     prompt = build_single_pass_prompt(
         ticket=ticket,
@@ -520,6 +550,8 @@ async def run_gemini_single_pass(
         ticket_analysis=ticket_analysis,
         code_context=fallback_context["code_context"],
         observations=fallback_context["observations"],
+        round_index=round_index,
+        max_rounds=max_rounds,
     )
 
     def call_model() -> types.GenerateContentResponse:
@@ -556,7 +588,11 @@ async def run_gemini_single_pass(
             "evidence_files": parsed.get("evidence_files") or [],
             "repo_evidence_found": bool(parsed.get("repo_evidence_found")),
             "confidence": parsed.get("confidence") or "low",
+            "confidence_score": int(parsed.get("confidence_score") or 0),
             "complexity": parsed.get("complexity") or "low",
+            "needs_more_context": bool(parsed.get("needs_more_context")),
+            "additional_search_queries": parsed.get("additional_search_queries") or [],
+            "prioritized_files": parsed.get("prioritized_files") or [],
             "recommended_action": parsed.get("recommended_action") or "request_more_context",
         },
     }
@@ -686,6 +722,8 @@ async def run_llm_analysis(
     execute_tool: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None,
     fallback_context: dict[str, Any],
     ticket_analysis: dict[str, Any] | None = None,
+    round_index: int = 1,
+    max_rounds: int = MAX_ANALYSIS_ROUNDS,
 ) -> dict[str, Any]:
     ticket_analysis = ticket_analysis or fallback_analyze_ticket(ticket)
 
@@ -698,7 +736,14 @@ async def run_llm_analysis(
             )
         )
 
-    result = await run_gemini_single_pass(ticket, repository, ticket_analysis, fallback_context)
+    result = await run_gemini_single_pass(
+        ticket,
+        repository,
+        ticket_analysis,
+        fallback_context,
+        round_index=round_index,
+        max_rounds=max_rounds,
+    )
     result["technical_analysis"]["observation_summary"] = build_observation_summary(
         fallback_context["observations"]
     )
