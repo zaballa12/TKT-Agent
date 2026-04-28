@@ -31,6 +31,16 @@ GITHUB_REF=
 
 O projeto aceita `GITHUB_TOKEN` ou `GITHUB_PERSONAL_ACCESS_TOKEN`.
 
+## Configuracao do agente
+
+As instrucoes e opcoes do agente ficam fora do codigo Python:
+
+- `config/agent/system_instruction.md`
+- `config/agent/analysis_prompt.md`
+- `config/agent/options.json`
+
+Isso permite ajustar categorias, acoes recomendadas e instrucoes da IA sem editar o backend.
+
 ## Consumo de requests
 
 O backend reduz chamadas ao Gemini buscando primeiro o contexto no repositorio via MCP

@@ -1,29 +1,26 @@
-import bootstrap  # noqa: F401
-
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from runtime import ensure_local_packages
+
+ensure_local_packages()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent import run_agent
+from settings import get_settings
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-PUBLIC_DIR = PROJECT_ROOT / "public"
-
-load_dotenv(PROJECT_ROOT / ".env")
+SETTINGS = get_settings()
 
 app = FastAPI(title="Agente de Tickets")
 ticket_store: list[dict[str, Any]] = []
 
-if PUBLIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=PUBLIC_DIR), name="static")
+if SETTINGS.public_dir.exists():
+    app.mount("/static", StaticFiles(directory=SETTINGS.public_dir), name="static")
 
 
 class AnalyzeTicketRequest(BaseModel):
@@ -56,7 +53,7 @@ def summarize_ticket(ticket_record: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/")
 async def index() -> FileResponse:
-    index_path = PUBLIC_DIR / "index.html"
+    index_path = SETTINGS.public_dir / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(index_path)
@@ -64,12 +61,12 @@ async def index() -> FileResponse:
 
 @app.get("/app.js")
 async def app_js() -> FileResponse:
-    return FileResponse(PUBLIC_DIR / "app.js", media_type="application/javascript")
+    return FileResponse(SETTINGS.public_dir / "app.js", media_type="application/javascript")
 
 
 @app.get("/styles.css")
 async def styles_css() -> FileResponse:
-    return FileResponse(PUBLIC_DIR / "styles.css", media_type="text/css")
+    return FileResponse(SETTINGS.public_dir / "styles.css", media_type="text/css")
 
 
 @app.get("/api/tickets")
@@ -121,9 +118,7 @@ async def confirm_ticket(ticket_id: str) -> dict[str, Any]:
 def main() -> None:
     import uvicorn
 
-    host = os.getenv("HOST") or "127.0.0.1"
-    port = int(os.getenv("PORT") or "3000")
-    uvicorn.run("main:app", host=host, port=port)
+    uvicorn.run("main:app", host=SETTINGS.host, port=SETTINGS.port)
 
 
 if __name__ == "__main__":

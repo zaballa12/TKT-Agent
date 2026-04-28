@@ -1,29 +1,25 @@
-import bootstrap  # noqa: F401
-
 import base64
 import json
-import os
 import re
 from contextlib import AsyncExitStack
 from typing import Any
 
+from runtime import ensure_local_packages
+
+ensure_local_packages()
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from settings import get_settings
 
 
 class MissingEnvironmentError(RuntimeError):
     pass
 
 
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise MissingEnvironmentError(f"Missing required environment variable: {name}")
-    return value
-
-
 def require_github_token() -> str:
-    token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN") or os.getenv("GITHUB_TOKEN")
+    token = get_settings().github_token
     if not token:
         raise MissingEnvironmentError(
             "Missing required environment variable: GITHUB_PERSONAL_ACCESS_TOKEN or GITHUB_TOKEN"
@@ -32,24 +28,31 @@ def require_github_token() -> str:
 
 
 def get_repo_config() -> dict[str, str | None]:
+    settings = get_settings()
+    if not settings.github_owner:
+        raise MissingEnvironmentError("Missing required environment variable: GITHUB_OWNER")
+    if not settings.github_repo:
+        raise MissingEnvironmentError("Missing required environment variable: GITHUB_REPO")
+
     return {
-        "owner": require_env("GITHUB_OWNER"),
-        "repo": require_env("GITHUB_REPO"),
-        "ref": os.getenv("GITHUB_REF") or None,
+        "owner": settings.github_owner,
+        "repo": settings.github_repo,
+        "ref": settings.github_ref or None,
     }
 
 
 def get_default_docker_args() -> list[str]:
+    settings = get_settings()
     args = ["run", "-i"]
 
-    if os.getenv("MCP_DOCKER_CONTAINER_NAME"):
-        args.extend(["--name", os.environ["MCP_DOCKER_CONTAINER_NAME"]])
+    if settings.mcp_docker_container_name:
+        args.extend(["--name", settings.mcp_docker_container_name])
 
-    if os.getenv("MCP_DOCKER_KEEP_CONTAINER") != "true":
+    if not settings.mcp_docker_keep_container:
         args.append("--rm")
 
-    if os.getenv("MCP_DOCKER_VOLUME"):
-        args.extend(["-v", os.environ["MCP_DOCKER_VOLUME"]])
+    if settings.mcp_docker_volume:
+        args.extend(["-v", settings.mcp_docker_volume])
 
     args.extend(
         [
@@ -64,27 +67,29 @@ def get_default_docker_args() -> list[str]:
         ]
     )
 
-    if os.getenv("MCP_ENABLE_COMMAND_LOGGING") == "true":
-        log_file = os.getenv("MCP_LOG_FILE") or "/logs/github-mcp.log"
+    if settings.mcp_enable_command_logging:
+        log_file = settings.mcp_log_file or "/logs/github-mcp.log"
         args.extend(["--enable-command-logging", "--log-file", log_file])
 
     return args
 
 
 def get_server_command_config() -> tuple[str, list[str]]:
-    command = os.getenv("MCP_SERVER_COMMAND") or "docker"
-    raw_args = os.getenv("MCP_SERVER_ARGS")
-    if raw_args:
-        args = [part.strip() for part in raw_args.split(",") if part.strip()]
+    settings = get_settings()
+    if settings.mcp_server_args:
+        args = [part.strip() for part in settings.mcp_server_args.split(",") if part.strip()]
     else:
         args = get_default_docker_args()
-    return command, args
+    return settings.mcp_server_command, args
 
 
 def get_server_environment() -> dict[str, str]:
+    import os
+
+    settings = get_settings()
     env = dict(os.environ)
     env["GITHUB_PERSONAL_ACCESS_TOKEN"] = require_github_token()
-    env["GITHUB_TOOLSETS"] = os.getenv("GITHUB_TOOLSETS") or "repos"
+    env["GITHUB_TOOLSETS"] = settings.github_toolsets
     return env
 
 
@@ -156,11 +161,7 @@ def normalize_search_results(payload: Any) -> list[dict[str, Any]]:
             continue
 
         repository = item.get("repository")
-        if isinstance(repository, dict):
-            repository_name = repository.get("full_name")
-        else:
-            repository_name = repository
-
+        repository_name = repository.get("full_name") if isinstance(repository, dict) else repository
         path = item.get("path") or item.get("name") or ""
         if not path:
             continue
@@ -222,9 +223,6 @@ class GitHubMcpClient:
             return self._session
 
         require_github_token()
-        if not os.getenv("GITHUB_TOOLSETS"):
-            os.environ["GITHUB_TOOLSETS"] = "repos"
-
         command, args = get_server_command_config()
         server = StdioServerParameters(command=command, args=args, env=get_server_environment())
         self._stack = AsyncExitStack()
@@ -267,13 +265,7 @@ class GitHubMcpClient:
 
         raw_text = extract_text_content(result)
         payload = getattr(result, "structured_content", None) or safe_json_parse(raw_text) or {}
-        return [
-            {
-                **item,
-                "ref": repo["ref"],
-            }
-            for item in normalize_search_results(payload)
-        ]
+        return [{**item, "ref": repo["ref"]} for item in normalize_search_results(payload)]
 
     async def get_file(self, path: str) -> dict[str, Any]:
         repo = get_repo_config()
@@ -286,7 +278,6 @@ class GitHubMcpClient:
             arguments["ref"] = repo["ref"]
 
         result = await self.call_tool("get_file_contents", arguments)
-
         raw_text = extract_text_content(result)
         payload = getattr(result, "structured_content", None) or safe_json_parse(raw_text) or {}
         return normalize_file_result(path, payload, raw_text, result)

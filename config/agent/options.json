@@ -1,0 +1,53 @@
+{
+  "ticket_categories": [
+    {
+      "id": "bug",
+      "label": "Bug",
+      "description": "Falha, comportamento incorreto, erro técnico ou regressão."
+    },
+    {
+      "id": "question",
+      "label": "Question",
+      "description": "Dúvida sobre comportamento atual, regra de negócio ou implementação."
+    },
+    {
+      "id": "improvement",
+      "label": "Improvement",
+      "description": "Solicitação de melhoria, ajuste de fluxo ou evolução funcional."
+    }
+  ],
+  "recommended_actions": [
+    {
+      "id": "reply_to_ticket",
+      "label": "Reply to Ticket",
+      "description": "Responder o ticket com base na evidência já encontrada."
+    },
+    {
+      "id": "create_dev_task",
+      "label": "Create Dev Task",
+      "description": "Abrir atividade técnica para investigação, correção ou implementação."
+    },
+    {
+      "id": "request_more_context",
+      "label": "Request More Context",
+      "description": "Pedir mais detalhes do ticket, histórico ou evidências externas."
+    },
+    {
+      "id": "refine_search",
+      "label": "Refine Search",
+      "description": "Continuar a inspeção do repositório com buscas adicionais."
+    },
+    {
+      "id": "ignore",
+      "label": "Ignore",
+      "description": "Não agir porque o ticket não exige ação útil ou está fora do escopo."
+    }
+  ],
+  "confidence_levels": ["low", "medium", "high"],
+  "policy": {
+    "confidence_threshold": 80,
+    "max_analysis_rounds": 4,
+    "max_context_files": 6,
+    "max_file_chars": 12000
+  }
+}
