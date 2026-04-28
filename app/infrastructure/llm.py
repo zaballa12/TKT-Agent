@@ -3,14 +3,15 @@ import asyncio
 import json
 from typing import Any
 
-from runtime import ensure_local_packages
+from app.core.runtime import ensure_local_packages
 
 ensure_local_packages()
 
 from google import genai
+from google.genai import types
 
-from agent_config import AgentConfig, get_agent_config
-from settings import get_settings
+from app.config.agent_config import AgentConfig, get_agent_config
+from app.config.settings import get_settings
 
 # Cria ou reutiliza o cliente Gemini. Entra quando `run_llm_analysis` precisa chamar o modelo.
 @lru_cache(maxsize=1)

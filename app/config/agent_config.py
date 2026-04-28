@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import json
 
-from settings import get_settings
+from app.config.settings import get_settings
 
 
 @dataclass(frozen=True)

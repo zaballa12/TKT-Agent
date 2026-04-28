@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from runtime import PROJECT_ROOT, ensure_local_packages
+from app.core.runtime import PROJECT_ROOT, ensure_local_packages
 
 ensure_local_packages()
 

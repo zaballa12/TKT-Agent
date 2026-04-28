@@ -2,7 +2,7 @@ from pathlib import Path
 import sys
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_PACKAGES = PROJECT_ROOT / ".python_packages"
 
 

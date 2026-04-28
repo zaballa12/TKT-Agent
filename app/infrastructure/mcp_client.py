@@ -4,14 +4,14 @@ import re
 from contextlib import AsyncExitStack
 from typing import Any
 
-from runtime import ensure_local_packages
+from app.core.runtime import ensure_local_packages
 
 ensure_local_packages()
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from settings import get_settings
+from app.config.settings import get_settings
 
 
 class MissingEnvironmentError(RuntimeError):

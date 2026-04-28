@@ -1,8 +1,8 @@
 from typing import Any
 
-from agent_config import get_agent_config
-from llm import run_llm_analysis
-from mcp_client import GitHubMcpClient, get_repo_config
+from app.config.agent_config import get_agent_config
+from app.infrastructure.llm import run_llm_analysis
+from app.infrastructure.mcp_client import GitHubMcpClient, get_repo_config
 
 
 def is_useful_code_path(path: str) -> bool:
