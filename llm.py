@@ -8,12 +8,11 @@ from runtime import ensure_local_packages
 ensure_local_packages()
 
 from google import genai
-from google.genai import types
 
 from agent_config import AgentConfig, get_agent_config
 from settings import get_settings
 
-
+# Cria ou reutiliza o cliente Gemini. Entra quando `run_llm_analysis` precisa chamar o modelo.
 @lru_cache(maxsize=1)
 def get_gemini_client() -> genai.Client:
     settings = get_settings()
@@ -21,7 +20,12 @@ def get_gemini_client() -> genai.Client:
         raise RuntimeError("GEMINI_API_KEY is required to analyze tickets.")
     return genai.Client(api_key=settings.gemini_api_key)
 
-
+# Criação do prompt
+# Resume observações do repositório em texto curto para o prompt.
+# - Entra dentro de `build_analysis_prompt`, antes da chamada ao LLM.
+# Exemplo:
+#    - Input: `[{"type": "search", "query": "auth", "matches": [{"path": "api/auth.py"}]}]`
+#    - Output: `SEARCH query="auth" matches=1 top_paths=api/auth.py`
 def format_observation_summary(observations: list[dict[str, Any]]) -> str:
     if not observations:
         return "No repository observations collected yet."
@@ -49,7 +53,12 @@ def format_observation_summary(observations: list[dict[str, Any]]) -> str:
 
     return "\n".join(lines)
 
-
+# Criação do prompt
+# Converte arquivos carregados em blocos de contexto limitados pela configuração.
+# - Entra dentro de `build_analysis_prompt` para anexar trechos de código ao prompt.
+# Exemplo:
+#    - Input: `[{"path": "llm.py", "content": "def x(): pass"}]`
+#    - Output: bloco de texto como `FILE: llm.py` seguido pelo conteúdo truncado do arquivo.
 def format_file_context(code_context: list[dict[str, Any]], config: AgentConfig) -> str:
     if not code_context:
         return "No repository files were loaded."
@@ -60,11 +69,21 @@ def format_file_context(code_context: list[dict[str, Any]], config: AgentConfig)
         chunks.append(f"FILE: {file['path']}\n```text\n{content}\n```")
     return "\n\n".join(chunks)
 
-
+# Criação do prompt
+# Transforma opções configuráveis em texto para o prompt.
+# - Entra em `build_analysis_prompt` para listar categorias e ações válidas.
+# Exemplo:
+#    - Input: opções com `id="bug"` e `description="Erro funcional"
+#    - Output: `- bug: Erro funcional`
 def format_option_lines(options: tuple[Any, ...]) -> str:
     return "\n".join(f"- {option.id}: {option.description}" for option in options)
 
-
+# Criação do prompt
+# Monta o prompt final com ticket, contexto do repositório e instruções para o modelo.
+# - Entra em `run_llm_analysis` antes de chamar o Gemini.
+# Exemplo:
+#    - Input: ticket textual, metadados do repositório, observações e arquivos carregados.
+#    - Output: string longa com instruções, contexto e campos esperados para análise.
 def build_analysis_prompt(
     ticket: str,
     repository: dict[str, Any],
@@ -91,7 +110,12 @@ def build_analysis_prompt(
         file_context=format_file_context(code_context, config),
     )
 
-
+# Estrutura saida do prompt
+# Define o JSON Schema que diz a IA exatamente quais campos deve retornar, seus tipos e valores permitidos.
+# - Entra em `run_llm_analysis` no momento de configurar `generate_content`.
+# Exemplo:
+#    - Input: config com categorias e ações permitidas.
+#    - Output: dict no formato JSON Schema com enums e campos obrigatórios.
 def build_response_schema(config: AgentConfig) -> dict[str, Any]:
     category_ids = [option.id for option in config.ticket_categories]
     action_ids = [option.id for option in config.recommended_actions]
@@ -142,8 +166,14 @@ def build_response_schema(config: AgentConfig) -> dict[str, Any]:
         ],
     }
 
-
+# Le saida do prompt
+# Converte o texto retornado pelo modelo em JSON validado de alto nível.
+# - Entra logo após a resposta do Gemini, ainda dentro de `run_llm_analysis`.
+# Exemplo:
+#    - Input: `'{"problem_type":"bug","confidence_score":80}'`
+#    - Output: `{"problem_type": "bug", "confidence_score": 80
 def parse_model_payload(response_text: str) -> dict[str, Any]:
+    
     try:
         payload = json.loads(response_text)
     except json.JSONDecodeError as error:
@@ -154,45 +184,17 @@ def parse_model_payload(response_text: str) -> dict[str, Any]:
 
     return payload
 
-
-async def run_llm_analysis(
-    ticket: str,
-    repository: dict[str, Any],
+# Le saida do prompt
+# Normaliza o payload bruto do modelo para o formato final esperado pela aplicação.
+# - Entra em `run_llm_analysis` depois do parse do JSON.
+# Exemplo:
+#    - Input: payload do modelo + observações + config.
+#    - Output: `{"ticket_analysis": {...}, "technical_analysis": {...}}`
+def build_analysis_result(
+    payload: dict[str, Any],
     observations: list[dict[str, Any]],
-    code_context: list[dict[str, Any]],
-    round_index: int,
-    max_rounds: int,
+    config: AgentConfig,
 ) -> dict[str, Any]:
-    config = get_agent_config()
-    settings = get_settings()
-    prompt = build_analysis_prompt(
-        ticket=ticket,
-        repository=repository,
-        observations=observations,
-        code_context=code_context,
-        round_index=round_index,
-        max_rounds=max_rounds,
-        config=config,
-    )
-
-    def call_model() -> types.GenerateContentResponse:
-        return get_gemini_client().models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=config.system_instruction,
-                responseMimeType="application/json",
-                responseJsonSchema=build_response_schema(config),
-            ),
-        )
-
-    try:
-        response = await asyncio.to_thread(call_model)
-    except Exception as error:  # noqa: BLE001
-        raise RuntimeError(f"Gemini SDK error: {error}") from error
-
-    payload = parse_model_payload(response.text or "")
-
     return {
         "ticket_analysis": {
             "problem_type": payload.get("problem_type"),
@@ -219,3 +221,59 @@ async def run_llm_analysis(
             "observation_summary": format_observation_summary(observations),
         },
     }
+
+
+# Orquestra a análise completa do ticket com prompt, chamada ao LLM e normalização da saída.
+# Fluxo:
+# 1. Carrega config e settings. 
+# 2. Monta o prompt com ticket + contexto do repositório.
+# 3. Chama o Gemini com schema JSON.
+# 4. Interpreta a resposta e devolve o payload final do agente.
+# Exemplo:
+# - Input: ticket textual, `repository={"owner":"acme","repo":"api"}`, observações e arquivos.
+# - Output: `{"ticket_analysis": {...}, "technical_analysis": {...}}`   
+async def run_llm_analysis(
+    ticket: str,
+    repository: dict[str, Any],
+    observations: list[dict[str, Any]],
+    code_context: list[dict[str, Any]],
+    round_index: int,
+    max_rounds: int,
+) -> dict[str, Any]:
+    
+    config = get_agent_config()
+    settings = get_settings()
+    prompt = build_analysis_prompt(
+        ticket=ticket,
+        repository=repository,
+        observations=observations,
+        code_context=code_context,
+        round_index=round_index,
+        max_rounds=max_rounds,
+        config=config,
+    )
+
+    def call_model() -> types.GenerateContentResponse:
+        return get_gemini_client().models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                # Vem do arquivo sytem_instruction, que é onde definimos como a IA deve se comportar
+                system_instruction=config.system_instruction,
+                # Restringe a resposta do modelo a um formato JSON específico, definido por `build_response_schema`.
+                responseMimeType="application/json",
+                responseJsonSchema=build_response_schema(config),
+            ),
+        )
+
+    try:
+        response = await asyncio.to_thread(call_model)
+    except Exception as error:  # noqa: BLE001
+        raise RuntimeError(f"Gemini SDK error: {error}") from error
+
+    payload = parse_model_payload(response.text)
+    return build_analysis_result(
+        payload=payload,
+        observations=observations,
+        config=config,
+    )
