@@ -1,10 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.runtime import ensure_local_packages
-
-ensure_local_packages()
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles

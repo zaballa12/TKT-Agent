@@ -3,10 +3,6 @@ import asyncio
 import json
 from typing import Any
 
-from app.core.runtime import ensure_local_packages
-
-ensure_local_packages()
-
 from google import genai
 from google.genai import types
 

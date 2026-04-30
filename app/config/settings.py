@@ -2,10 +2,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from app.core.runtime import PROJECT_ROOT, ensure_local_packages
-
-ensure_local_packages()
-
 from dotenv import load_dotenv
 import os
 
@@ -39,12 +35,13 @@ class Settings:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    load_dotenv(PROJECT_ROOT / ".env")
+    project_root = Path(__file__).resolve().parents[2]
+    load_dotenv(project_root / ".env")
 
     return Settings(
-        project_root=PROJECT_ROOT,
-        public_dir=PROJECT_ROOT / "public",
-        agent_config_dir=PROJECT_ROOT / "config" / "agent",
+        project_root=project_root,
+        public_dir=project_root / "public",
+        agent_config_dir=project_root / "config" / "agent",
         host=os.getenv("HOST") or "127.0.0.1",
         port=int(os.getenv("PORT") or "3000"),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or None,

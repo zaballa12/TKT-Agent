@@ -51,8 +51,18 @@ limiar desejado. Isso ajuda quando o gargalo e RPM/RPD, nao TPM.
 ## Rodando
 
 ```powershell
+.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python main.py
+```
+
+Se ainda nao existir o ambiente virtual:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
 Acesse:
